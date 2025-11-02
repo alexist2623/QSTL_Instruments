@@ -1,6 +1,7 @@
 """QSTL QDAC2 Driver"""
 import numpy as np
 import time
+import asyncio
 
 from qcodes_contrib_drivers.drivers.QDevil import QDAC2
 
@@ -86,3 +87,73 @@ class QSTL_QDac2(QDAC2.QDac2):
         """
         for i in range(24):
             self.channels[i].dc_slew_rate_V_per_s(rate)
+    
+    async def arm_qdac2(
+        self,
+        channel: int,
+        voltages: tuple[int],
+        ext_in: int,
+        dwell_s: float,
+        repetitions: int,
+        hold_seconds: float = None
+    ) -> None:
+        """
+        Configure a DC list on the given channel in 'stepped' mode.
+        Each rising edge on Ext In advances one step: v0 -> v1 -> v2 -> ...
+
+        Parameters
+        ----------
+        qdac2 : QDac2 instance
+        channel : int
+            Channel number (1..24)
+        voltages : sequence of float
+            Voltage list, e.g., (0.0, 2.0, 3.0)
+        ext_in : int
+            External trigger input index (1..4)
+        dwell_s : float
+            Dwell time per step (must be > 0; too small may raise instrument error)
+        repetitions : int
+            How many times to iterate the whole list. 1 means run once.
+        hold_seconds : float | None
+            If None, wait indefinitely for triggers. If set, wait for the given seconds.
+        safe_final_voltage : float | None
+            If set, force the channel to this DC voltage at the end.
+        """
+        self.free_all_triggers()
+        ch = self.channel(channel)
+
+        # Create the DC list object
+        lst = ch.dc_list(
+            voltages=list(voltages),
+            repetitions=repetitions,
+            dwell_s=dwell_s,
+            stepped=True
+        )
+
+        try:
+            # Start on external trigger input 'ext_in' (rising edge)
+            lst.start_on_external(ext_in)
+
+            print(f"Armed ch{channel:02} DC list in stepped mode.")
+            print(f"Steps: {list(voltages)}")
+            print(f"Advance on Ext In {ext_in} rising edges...")
+
+            # Keep the program alive while the hardware advances on triggers
+            if hold_seconds is None:
+                while True:
+                    await asyncio.sleep(1.0)
+            else:
+                await asyncio.sleep(float(hold_seconds))
+
+        except KeyboardInterrupt:
+            print("Interrupted by user.")
+
+        finally:
+            # Clean up the list object
+            try:
+                lst.close()
+            except Exception as e:
+                print(f"close() error: {e}")
+
+            # Return to zero voltages
+            self.ramp_all_channels_to_zero()
