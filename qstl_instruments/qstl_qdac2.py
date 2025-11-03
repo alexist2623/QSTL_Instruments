@@ -37,7 +37,7 @@ class QSTL_QDac2(QDAC2.QDac2):
         """
         if any(abs(np.array(values)) > self.v_limit):
             raise Exception("voltage is above the limit")
-    
+
     def get_initial_voltages(self) -> dict:
         """
         Return initial voltages from QDAC2
@@ -63,7 +63,7 @@ class QSTL_QDac2(QDAC2.QDac2):
         self.validate_voltages(value)
         channel_nums = [
             self.contacts[channel] for channel in channels
-        ] 
+        ]
         previous_v = []
         for i in channel_nums:
             previous_v.append(self.channels[i-1].dc_constant_V()) ## numbering starts from zero
@@ -87,7 +87,7 @@ class QSTL_QDac2(QDAC2.QDac2):
         """
         for i in range(24):
             self.channels[i].dc_slew_rate_V_per_s(rate)
-    
+
     async def arm_qdac2(
         self,
         channel: int,
