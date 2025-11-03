@@ -88,14 +88,15 @@ class QSTL_QDac2(QDAC2.QDac2):
         for i in range(24):
             self.channels[i].dc_slew_rate_V_per_s(rate)
     
-    async def arm_qdac2(
+    async def arm_1d_scan(
         self,
         channel: int,
         voltages: tuple[int],
         ext_in: int,
         dwell_s: float,
         repetitions: int,
-        hold_seconds: float = None
+        hold_seconds: float = 5,
+        free_trig: bool = True,
     ) -> None:
         """
         Configure a DC list on the given channel in 'stepped' mode.
@@ -119,15 +120,16 @@ class QSTL_QDac2(QDAC2.QDac2):
         safe_final_voltage : float | None
             If set, force the channel to this DC voltage at the end.
         """
-        self.free_all_triggers()
+        if free_trig:
+            self.free_all_triggers()
         ch = self.channel(channel)
 
         # Create the DC list object
         lst = ch.dc_list(
-            voltages=list(voltages),
-            repetitions=repetitions,
-            dwell_s=dwell_s,
-            stepped=True
+            voltages = list(voltages),
+            repetitions = repetitions,
+            dwell_s = dwell_s,
+            stepped = True
         )
 
         try:
@@ -138,12 +140,7 @@ class QSTL_QDac2(QDAC2.QDac2):
             print(f"Steps: {list(voltages)}")
             print(f"Advance on Ext In {ext_in} rising edges...")
 
-            # Keep the program alive while the hardware advances on triggers
-            if hold_seconds is None:
-                while True:
-                    await asyncio.sleep(1.0)
-            else:
-                await asyncio.sleep(float(hold_seconds))
+            await asyncio.sleep(float(hold_seconds))
 
         except KeyboardInterrupt:
             print("Interrupted by user.")
@@ -157,3 +154,42 @@ class QSTL_QDac2(QDAC2.QDac2):
 
             # Return to zero voltages
             self.ramp_all_channels_to_zero()
+
+    async def arm_2d_scan(
+        self,
+        fast_chan: int,
+        fast_voltages: tuple[int],
+        slow_chan: int,
+        slow_voltages: tuple[int],
+        ext_in: int,
+        dwell_s: float,
+        repetitions: int,
+        hold_seconds: float = 5,
+    ) -> None:
+        self.free_all_triggers()
+
+        tasks = [
+            asyncio.create_task(
+                self.arm_1d_scan(
+                    channel = fast_chan,
+                    voltages = tuple(np.tile(fast_voltages, len(slow_voltages))),
+                    ext_in = ext_in,
+                    dwell_s = dwell_s,
+                    repetitions = repetitions,
+                    hold_seconds = hold_seconds,
+                    free_trig = False
+                )
+            ),
+            asyncio.create_task(
+                self.arm_1d_scan(
+                    channel = slow_chan,
+                    voltages = tuple(np.repeat(slow_voltages, len(fast_voltages))),
+                    ext_in = ext_in,
+                    dwell_s = dwell_s,
+                    repetitions = repetitions,
+                    hold_seconds = hold_seconds,
+                    free_trig = False
+                )
+            )
+        ]
+        await asyncio.gather(*tasks)

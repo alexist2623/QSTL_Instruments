@@ -89,11 +89,14 @@ class QSTL_NIDaq:
             sweep,
             ch_ids,
             num_samples_per_channel,
-            v_min = -10,
-            v_max = +10,
-            timeout_sec = 5,
+            v_min,
+            v_max ,
+            timeout_sec,
             ai_task: nidaqmx.Task = None,
         ) -> np.array:
+        """
+        Acquire num_smples_per_channel of samples for each channels when trigger is sensed.
+        """
         sampling_rate_per_channel = np.floor(self.max_sampling_rate/len(ch_ids))
         for ch_id in ch_ids:
             ai_task.ai_channels.add_ai_voltage_chan(ch_id, terminal_config=TermConfig.DIFF, min_val= v_min, max_val= v_max)
@@ -101,14 +104,58 @@ class QSTL_NIDaq:
         ai_task.triggers.start_trigger.cfg_dig_edge_start_trig('pfi0')
         ai_task.start()
 
-        sweep.start()  ## start the qdac2 sweep, which will generate the trigger for data acquisition
+        sweep.start()
         result = ai_task.read(number_of_samples_per_channel=num_samples_per_channel, timeout=timeout_sec)
 
         ai_task.stop()
         return np.array(result)
+    
+    @open_nidaqmx_task
+    def read_multi_triggered_multi_channels(
+            self,
+            sweep,
+            ch_ids,
+            num_samples_per_channel,
+            num_records: int,
+            v_min,
+            v_max,
+            timeout_sec,
+            ai_task: nidaqmx.Task = None,
+        ) -> np.array:
+        """
+        Read multiple channels with repetetive triggering. However, NI Daq we have does not support retriggering, 
+        so this function would not work.
+        """
+        sampling_rate_per_channel = np.floor(self.max_sampling_rate/len(ch_ids))
+        for ch_id in ch_ids:
+            ai_task.ai_channels.add_ai_voltage_chan(ch_id, terminal_config=TermConfig.DIFF, min_val= v_min, max_val= v_max)
+        ai_task.timing.cfg_samp_clk_timing(
+            rate = sampling_rate_per_channel,
+            sample_mode = AcqType.FINITE,
+            samps_per_chan = int(num_samples_per_channel)
+        )
+        ai_task.triggers.start_trigger.cfg_dig_edge_start_trig("pfi0")
+        ai_task.triggers.start_trigger.retriggerable = True # This is not supported.
+        ai_task.triggers.start_trigger.max_num_trigs_to_detect = int(num_records)
+        ai_task.in_stream.input_buf_size = int(num_samples_per_channel * num_records)
+        ai_task.start()
 
+        sweep.start()
+
+        for _ in range(num_records):
+            block = ai_task.read(
+                number_of_samples_per_channel = num_samples_per_channel,
+                timeout = timeout_sec,
+            )
+            blocks.append(np.array(block, dtype=float))
+
+        ai_task.stop()
+        return np.stack(blocks, axis=0)
 
     def convert_volts_to_amps(self, x: list[float]) -> list[float]:
+        """
+        Convert measured voltage to current value.
+        """
         if self.gain is None:
             raise ValueError("Gain of preamp is not defined")
         return x/self.gain
