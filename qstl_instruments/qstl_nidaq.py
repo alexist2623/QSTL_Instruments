@@ -17,7 +17,7 @@ class QSTL_NIDaq:
         """Decorator to manage opening and closing a NI-DAQmx Task."""
         @wraps(f)
         def wrapper(*args, **kwargs):
-            with nidaqmx.Task('ai_task') as ai_task:
+            with nidaqmx.Task("ai_task") as ai_task:
                 # Inject the task into the wrapped function’s kwargs
                 return f(*args, ai_task=ai_task, **kwargs)
         return wrapper
@@ -46,18 +46,30 @@ class QSTL_NIDaq:
             self,
             ch_ids,
             num_samples_per_channel,
-            v_min = -10,
-            v_max = +10,
-            timeout_sec = 5,
+            v_min: float = -10,
+            v_max: float = +10,
+            timeout_sec: float = 5,
             ai_task: nidaqmx.Task = None,
         ) -> np.array:
         sampling_rate_per_channel = np.floor(self.max_sampling_rate/len(ch_ids))
         for ch_id in ch_ids:
-            ai_task.ai_channels.add_ai_voltage_chan(ch_id, terminal_config=TermConfig.DIFF, min_val= v_min, max_val= v_max)
-        ai_task.timing.cfg_samp_clk_timing(rate=sampling_rate_per_channel, sample_mode=AcqType.FINITE, samps_per_chan=int(num_samples_per_channel))
+            ai_task.ai_channels.add_ai_voltage_chan(
+                ch_id,
+                terminal_config = TermConfig.DIFF,
+                min_val = v_min,
+                max_val = v_max
+            )
+        ai_task.timing.cfg_samp_clk_timing(
+            rate = sampling_rate_per_channel,
+            sample_mode = AcqType.FINITE,
+            samps_per_chan = int(num_samples_per_channel)
+        )
     
         ai_task.start()
-        result = ai_task.read(number_of_samples_per_channel=num_samples_per_channel, timeout=timeout_sec)
+        result = ai_task.read(
+            number_of_samples_per_channel = num_samples_per_channel,
+            timeout = timeout_sec
+        )
         ai_task.stop()
         
         return np.array(result)
@@ -73,9 +85,12 @@ class QSTL_NIDaq:
             timeout_sec = 5,
             ai_task: nidaqmx.Task = None,
         ) -> np.array:
+        """
+        Read voltage from a single channel triggered by QDAC2 sweep
+        """
         ai_task.ai_channels.add_ai_voltage_chan(ch_id, terminal_config=TermConfig.DIFF, min_val= v_min, max_val= v_max)
         ai_task.timing.cfg_samp_clk_timing(rate=self.max_sampling_rate, sample_mode=AcqType.FINITE, samps_per_chan=int(num_samples))
-        ai_task.triggers.start_trigger.cfg_dig_edge_start_trig('pfi0')
+        ai_task.triggers.start_trigger.cfg_dig_edge_start_trig("pfi0")
         ai_task.start()
         sweep.start()  ## start the qdac2 sweep, which will generate the trigger for data acquisition
         result = ai_task.read(number_of_samples_per_channel=num_samples, timeout=timeout_sec)
@@ -99,9 +114,18 @@ class QSTL_NIDaq:
         """
         sampling_rate_per_channel = np.floor(self.max_sampling_rate/len(ch_ids))
         for ch_id in ch_ids:
-            ai_task.ai_channels.add_ai_voltage_chan(ch_id, terminal_config=TermConfig.DIFF, min_val= v_min, max_val= v_max)
-        ai_task.timing.cfg_samp_clk_timing(rate=sampling_rate_per_channel, sample_mode=AcqType.FINITE, samps_per_chan=int(num_samples_per_channel))
-        ai_task.triggers.start_trigger.cfg_dig_edge_start_trig('pfi0')
+            ai_task.ai_channels.add_ai_voltage_chan(
+                ch_id,
+                terminal_config = TermConfig.DIFF,
+                min_val = v_min,
+                max_val = v_max
+            )
+        ai_task.timing.cfg_samp_clk_timing(
+            rate = sampling_rate_per_channel,
+            sample_mode = AcqType.FINITE,
+            samps_per_chan = int(num_samples_per_channel)
+        )
+        ai_task.triggers.start_trigger.cfg_dig_edge_start_trig("pfi0")
         ai_task.start()
 
         sweep.start()
@@ -159,7 +183,6 @@ class QSTL_NIDaq:
         if self.gain is None:
             raise ValueError("Gain of preamp is not defined")
         return x/self.gain
-
 
     def reshape_array(self, x: list[float], num_bins: int) -> np.array:
         bin_length = int(len(x)/num_bins)
